@@ -1,0 +1,6 @@
+{
+  "name": "API Practice Finance Manager",
+  "description": "A simple full-stack learning project to practice REST APIs with React, Axios, Core Java, JDBC, and SQL.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
