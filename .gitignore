@@ -2,6 +2,11 @@ node_modules/
 build/
 dist/
 coverage/
+target/
+java-backend/target/
+logs/
+java-backend/target/tomcat/logs/
+*.class
 .DS_Store
 *.log
 .env*
