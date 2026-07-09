@@ -4,11 +4,10 @@ dist/
 coverage/
 target/
 java-backend/target/
+logs/
+java-backend/target/tomcat/logs/
 *.class
 .DS_Store
 *.log
 .env*
 !.env.example
-java-backend/target/tomcat/logs/access_log.2026-07-09
-java-backend/target/tomcat/logs/access_log.2026-07-09
-/java-backend/target/tomcat/logs
