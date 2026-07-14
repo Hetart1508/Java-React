@@ -8,6 +8,12 @@ export interface Transaction {
   description: string;
 }
 
+export interface AuthUser {
+  id: number;
+  name: string;
+  email: string;
+}
+
 export interface SummaryStats {
   totalIncome: number;
   totalExpense: number;

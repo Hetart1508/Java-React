@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import axios from "axios";
-import { IndianRupee } from "lucide-react";
-import { PaginatedTransactions, SummaryStats, Transaction, TransactionQuery } from "./types";
+import { IndianRupee, LogOut } from "lucide-react";
+import { AuthUser, PaginatedTransactions, SummaryStats, Transaction, TransactionQuery } from "./types";
+import AuthPanel from "./components/AuthPanel";
 import SummaryDashboard from "./components/SummaryDashboard";
 import TransactionForm from "./components/TransactionForm";
 import TransactionList from "./components/TransactionList";
 
 axios.defaults.baseURL = import.meta.env.VITE_API_BASE_URL || "";
+axios.defaults.withCredentials = true;
 
 const initialQuery: TransactionQuery = {
   type: "",
@@ -19,6 +21,8 @@ const initialQuery: TransactionQuery = {
 };
 
 export default function App() {
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [stats, setStats] = useState<SummaryStats>({
     totalIncome: 0,
@@ -30,6 +34,17 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+
+  const checkSession = useCallback(async () => {
+    try {
+      const response = await axios.get<AuthUser>("/api/auth/me");
+      setCurrentUser(response.data);
+    } catch {
+      setCurrentUser(null);
+    } finally {
+      setCheckingSession(false);
+    }
+  }, []);
 
   const fetchSummary = useCallback(async () => {
     const response = await axios.get<SummaryStats>("/api/transactions/summary");
@@ -61,9 +76,15 @@ export default function App() {
   }, [query]);
 
   useEffect(() => {
-    fetchTransactions();
-    fetchSummary().catch(() => undefined);
-  }, [fetchTransactions, fetchSummary]);
+    checkSession();
+  }, [checkSession]);
+
+  useEffect(() => {
+    if (currentUser) {
+      fetchTransactions();
+      fetchSummary().catch(() => undefined);
+    }
+  }, [currentUser, fetchTransactions, fetchSummary]);
 
   const handleSaveTransaction = async (
     transactionData: Omit<Transaction, "id"> & { id?: number },
@@ -91,6 +112,38 @@ export default function App() {
     document.getElementById("transaction-form-container")?.scrollIntoView({ behavior: "smooth" });
   };
 
+  const handleAuthenticated = (user: AuthUser) => {
+    setCurrentUser(user);
+    setQuery(initialQuery);
+    setEditingTransaction(null);
+  };
+
+  const handleLogout = async () => {
+    await axios.post("/api/auth/logout");
+    setCurrentUser(null);
+    setTransactions([]);
+    setStats({
+      totalIncome: 0,
+      totalExpense: 0,
+      currentBalance: 0,
+    });
+    setTotal(0);
+    setEditingTransaction(null);
+    setQuery(initialQuery);
+  };
+
+  if (checkingSession) {
+    return (
+      <div className="min-h-screen bg-slate-50 text-slate-500 flex items-center justify-center">
+        <div className="text-sm font-medium">Checking session...</div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return <AuthPanel onAuthenticated={handleAuthenticated} />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
       <nav className="bg-white border-b border-slate-200 sticky top-0 z-30">
@@ -103,6 +156,21 @@ export default function App() {
               <h1 className="text-lg font-semibold tracking-tight text-slate-950">Finance Manager</h1>
               <p className="text-xs text-slate-500">Transactions</p>
             </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="text-right hidden sm:block">
+              <div className="text-xs font-semibold text-slate-900">{currentUser.name}</div>
+              <div className="text-[11px] text-slate-500">{currentUser.email}</div>
+            </div>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="p-2 border border-slate-200 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-50"
+              title="Logout"
+            >
+              <LogOut size={16} />
+            </button>
           </div>
         </div>
       </nav>

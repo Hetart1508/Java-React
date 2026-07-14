@@ -31,22 +31,22 @@ public class TransactionService {
     /**
      * Retrieves all transactions with filter options applied.
      */
-    public List<Transaction> getAllTransactions(String type, String category, String date, String sortBy, String sortDir, int page, int pageSize) throws SQLException {
-        return transactionDAO.getAll(type, category, date, sortBy, sortDir, page, pageSize);
+    public List<Transaction> getAllTransactions(int userId, String type, String category, String date, String sortBy, String sortDir, int page, int pageSize) throws SQLException {
+        return transactionDAO.getAll(userId, type, category, date, sortBy, sortDir, page, pageSize);
     }
 
-    public int countTransactions(String type, String category, String date) throws SQLException {
-        return transactionDAO.countAll(type, category, date);
+    public int countTransactions(int userId, String type, String category, String date) throws SQLException {
+        return transactionDAO.countAll(userId, type, category, date);
     }
 
     /**
      * Retrieves a single transaction by its unique ID.
      */
-    public Transaction getTransactionById(int id) throws SQLException {
+    public Transaction getTransactionById(int id, int userId) throws SQLException {
         if (id <= 0) {
             throw new IllegalArgumentException("Transaction ID must be a positive integer.");
         }
-        Transaction t = transactionDAO.getById(id);
+        Transaction t = transactionDAO.getById(id, userId);
         if (t == null) {
             throw new IllegalArgumentException("Transaction with ID " + id + " does not exist.");
         }
@@ -56,7 +56,7 @@ public class TransactionService {
     /**
      * Validates and inserts a new Transaction.
      */
-    public Transaction addTransaction(Transaction transaction) throws SQLException {
+    public Transaction addTransaction(Transaction transaction, int userId) throws SQLException {
         // Run validations
         validateTransaction(transaction);
 
@@ -68,20 +68,20 @@ public class TransactionService {
         }
 
         // Delegate persistence to DAO
-        return transactionDAO.create(transaction);
+        return transactionDAO.create(transaction, userId);
     }
 
     /**
      * Validates and updates an existing Transaction fully (PUT).
      */
-    public boolean updateTransaction(Transaction transaction) throws SQLException {
+    public boolean updateTransaction(Transaction transaction, int userId) throws SQLException {
         // Ensure ID is valid
         if (transaction.getId() <= 0) {
             throw new IllegalArgumentException("A valid Transaction ID is required for a PUT update.");
         }
 
         // Ensure transaction exists in database first
-        Transaction existing = transactionDAO.getById(transaction.getId());
+        Transaction existing = transactionDAO.getById(transaction.getId(), userId);
         if (existing == null) {
             throw new IllegalArgumentException("Transaction with ID " + transaction.getId() + " not found.");
         }
@@ -94,19 +94,19 @@ public class TransactionService {
         transaction.setCategory(transaction.getCategory().trim());
 
         // Delegate to DAO
-        return transactionDAO.update(transaction);
+        return transactionDAO.update(transaction, userId);
     }
 
     /**
      * Partially updates an existing Transaction (PATCH).
      */
-    public boolean patchTransaction(int id, Map<String, Object> fieldsToUpdate) throws SQLException {
+    public boolean patchTransaction(int id, int userId, Map<String, Object> fieldsToUpdate) throws SQLException {
         if (id <= 0) {
             throw new IllegalArgumentException("A valid Transaction ID is required for a PATCH update.");
         }
 
         // Ensure transaction exists
-        Transaction existing = transactionDAO.getById(id);
+        Transaction existing = transactionDAO.getById(id, userId);
         if (existing == null) {
             throw new IllegalArgumentException("Transaction with ID " + id + " not found.");
         }
@@ -135,31 +135,31 @@ public class TransactionService {
         }
 
         // Delegate to DAO for dynamic query execution
-        return transactionDAO.patch(id, fieldsToUpdate);
+        return transactionDAO.patch(id, userId, fieldsToUpdate);
     }
 
     /**
      * Deletes a transaction from the system.
      */
-    public boolean deleteTransaction(int id) throws SQLException {
+    public boolean deleteTransaction(int id, int userId) throws SQLException {
         if (id <= 0) {
             throw new IllegalArgumentException("Transaction ID must be a positive integer.");
         }
 
         // Ensure transaction exists
-        Transaction existing = transactionDAO.getById(id);
+        Transaction existing = transactionDAO.getById(id, userId);
         if (existing == null) {
             throw new IllegalArgumentException("Transaction with ID " + id + " not found.");
         }
 
-        return transactionDAO.delete(id);
+        return transactionDAO.delete(id, userId);
     }
 
     /**
      * Retrieves overall income/expense totals for the dashboard cards.
      */
-    public Map<String, Double> getFinanceSummary() throws SQLException {
-        return transactionDAO.getSummary();
+    public Map<String, Double> getFinanceSummary(int userId) throws SQLException {
+        return transactionDAO.getSummary(userId);
     }
 
     // ==========================================

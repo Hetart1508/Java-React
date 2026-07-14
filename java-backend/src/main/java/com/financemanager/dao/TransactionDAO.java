@@ -27,8 +27,8 @@ public class TransactionDAO {
      * CREATE - Add a new Transaction (POST)
      * Maps to: INSERT INTO transactions ...
      */
-    public Transaction create(Transaction transaction) throws SQLException {
-        String sql = "INSERT INTO transactions (title, amount, type, category, date, description) VALUES (?, ?, ?, ?, ?, ?)";
+    public Transaction create(Transaction transaction, int userId) throws SQLException {
+        String sql = "INSERT INTO transactions (user_id, title, amount, type, category, date, description) VALUES (?, ?, ?, ?, ?, ?, ?)";
         
         // Try-with-resources: automatically closes Connection and PreparedStatement when done
         try (Connection conn = DatabaseConnection.getConnection();
@@ -37,12 +37,13 @@ public class TransactionDAO {
             
             // Binding parameters: protects against SQL Injection
             // PreparedStatement sanitizes values before executing the SQL statement
-            stmt.setString(1, transaction.getTitle());
-            stmt.setDouble(2, transaction.getAmount());
-            stmt.setString(3, transaction.getType());
-            stmt.setString(4, transaction.getCategory());
-            stmt.setDate(5, Date.valueOf(transaction.getDate())); // Parses YYYY-MM-DD string to SQL Date
-            stmt.setString(6, transaction.getDescription());
+            stmt.setInt(1, userId);
+            stmt.setString(2, transaction.getTitle());
+            stmt.setDouble(3, transaction.getAmount());
+            stmt.setString(4, transaction.getType());
+            stmt.setString(5, transaction.getCategory());
+            stmt.setDate(6, Date.valueOf(transaction.getDate())); // Parses YYYY-MM-DD string to SQL Date
+            stmt.setString(7, transaction.getDescription());
 
             int affectedRows = stmt.executeUpdate();
             
@@ -66,13 +67,14 @@ public class TransactionDAO {
      * READ - Get a single Transaction by ID (GET)
      * Maps to: SELECT * FROM transactions WHERE id = ?
      */
-    public Transaction getById(int id) throws SQLException {
-        String sql = "SELECT * FROM transactions WHERE id = ?";
+    public Transaction getById(int id, int userId) throws SQLException {
+        String sql = "SELECT * FROM transactions WHERE id = ? AND user_id = ?";
         
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             
             stmt.setInt(1, id);
+            stmt.setInt(2, userId);
             
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) {
@@ -96,11 +98,12 @@ public class TransactionDAO {
      * READ ALL with Dynamic Filtering (GET with query parameters)
      * Maps to: SELECT * FROM transactions WHERE [type=?] AND [category=?] AND [date=?]
      */
-    public List<Transaction> getAll(String type, String category, String date, String sortBy, String sortDir, int page, int pageSize) throws SQLException {
+    public List<Transaction> getAll(int userId, String type, String category, String date, String sortBy, String sortDir, int page, int pageSize) throws SQLException {
         List<Transaction> list = new ArrayList<>();
         
-        StringBuilder queryBuilder = new StringBuilder("SELECT * FROM transactions WHERE 1=1");
+        StringBuilder queryBuilder = new StringBuilder("SELECT * FROM transactions WHERE user_id = ?");
         List<Object> params = new ArrayList<>();
+        params.add(userId);
 
         if (type != null && !type.trim().isEmpty()) {
             queryBuilder.append(" AND type = ?");
@@ -151,9 +154,10 @@ public class TransactionDAO {
         return list;
     }
 
-    public int countAll(String type, String category, String date) throws SQLException {
-        StringBuilder queryBuilder = new StringBuilder("SELECT COUNT(*) FROM transactions WHERE 1=1");
+    public int countAll(int userId, String type, String category, String date) throws SQLException {
+        StringBuilder queryBuilder = new StringBuilder("SELECT COUNT(*) FROM transactions WHERE user_id = ?");
         List<Object> params = new ArrayList<>();
+        params.add(userId);
 
         if (type != null && !type.trim().isEmpty()) {
             queryBuilder.append(" AND type = ?");
@@ -196,8 +200,8 @@ public class TransactionDAO {
      * UPDATE - Replaces an entire Transaction (PUT)
      * Maps to: UPDATE transactions SET ... WHERE id = ?
      */
-    public boolean update(Transaction transaction) throws SQLException {
-        String sql = "UPDATE transactions SET title = ?, amount = ?, type = ?, category = ?, date = ?, description = ? WHERE id = ?";
+    public boolean update(Transaction transaction, int userId) throws SQLException {
+        String sql = "UPDATE transactions SET title = ?, amount = ?, type = ?, category = ?, date = ?, description = ? WHERE id = ? AND user_id = ?";
         
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -209,6 +213,7 @@ public class TransactionDAO {
             stmt.setDate(5, Date.valueOf(transaction.getDate()));
             stmt.setString(6, transaction.getDescription());
             stmt.setInt(7, transaction.getId());
+            stmt.setInt(8, userId);
 
             int affectedRows = stmt.executeUpdate();
             return affectedRows > 0; // Returns true if the transaction was updated successfully
@@ -219,7 +224,7 @@ public class TransactionDAO {
      * PARTIAL UPDATE - Modifies only specific fields (PATCH)
      * Dynamic SQL generation in plain JDBC
      */
-    public boolean patch(int id, Map<String, Object> fieldsToUpdate) throws SQLException {
+    public boolean patch(int id, int userId, Map<String, Object> fieldsToUpdate) throws SQLException {
         if (fieldsToUpdate == null || fieldsToUpdate.isEmpty()) {
             return false;
         }
@@ -255,8 +260,9 @@ public class TransactionDAO {
         }
 
         // Append the WHERE clause
-        sqlBuilder.append(" WHERE id = ?");
+        sqlBuilder.append(" WHERE id = ? AND user_id = ?");
         values.add(id);
+        values.add(userId);
 
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sqlBuilder.toString())) {
@@ -275,13 +281,14 @@ public class TransactionDAO {
      * DELETE - Remove a Transaction (DELETE)
      * Maps to: DELETE FROM transactions WHERE id = ?
      */
-    public boolean delete(int id) throws SQLException {
-        String sql = "DELETE FROM transactions WHERE id = ?";
+    public boolean delete(int id, int userId) throws SQLException {
+        String sql = "DELETE FROM transactions WHERE id = ? AND user_id = ?";
         
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             
             stmt.setInt(1, id);
+            stmt.setInt(2, userId);
             
             int affectedRows = stmt.executeUpdate();
             return affectedRows > 0;
@@ -292,29 +299,33 @@ public class TransactionDAO {
      * AGGREGATE SUMMARY - Calculates totals (Summary Dashboard)
      * Maps to: SELECT SUM(...) FROM transactions
      */
-    public Map<String, Double> getSummary() throws SQLException {
+    public Map<String, Double> getSummary(int userId) throws SQLException {
         Map<String, Double> summary = new HashMap<>();
         String sql = "SELECT " +
                      "  SUM(CASE WHEN type = 'INCOME' THEN amount ELSE 0 END) as total_income, " +
                      "  SUM(CASE WHEN type = 'EXPENSE' THEN amount ELSE 0 END) as total_expense " +
-                     "FROM transactions";
+                     "FROM transactions WHERE user_id = ?";
 
         try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql);
-             ResultSet rs = stmt.executeQuery()) {
-            
-            if (rs.next()) {
-                double totalIncome = rs.getDouble("total_income");
-                double totalExpense = rs.getDouble("total_expense");
-                double currentBalance = totalIncome - totalExpense;
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-                summary.put("totalIncome", totalIncome);
-                summary.put("totalExpense", totalExpense);
-                summary.put("currentBalance", currentBalance);
-            } else {
-                summary.put("totalIncome", 0.0);
-                summary.put("totalExpense", 0.0);
-                summary.put("currentBalance", 0.0);
+            stmt.setInt(1, userId);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+            
+                if (rs.next()) {
+                    double totalIncome = rs.getDouble("total_income");
+                    double totalExpense = rs.getDouble("total_expense");
+                    double currentBalance = totalIncome - totalExpense;
+
+                    summary.put("totalIncome", totalIncome);
+                    summary.put("totalExpense", totalExpense);
+                    summary.put("currentBalance", currentBalance);
+                } else {
+                    summary.put("totalIncome", 0.0);
+                    summary.put("totalExpense", 0.0);
+                    summary.put("currentBalance", 0.0);
+                }
             }
         }
         return summary;

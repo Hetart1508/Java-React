@@ -8,6 +8,7 @@ import com.financemanager.service.TransactionService;
 // with simple manual string parsing to demonstrate the mechanics of reading/writing HTTP streams.
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
+import javax.servlet.http.HttpSession;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -41,10 +42,13 @@ public class TransactionServlet extends HttpServlet {
      * Set CORS headers to allow React (running on another port like 3000/5173) 
      * to safely query our Java REST API.
      */
-    private void setAccessControlHeaders(HttpServletResponse resp) {
-        resp.setHeader("Access-Control-Allow-Origin", "*");
+    private void setAccessControlHeaders(HttpServletRequest req, HttpServletResponse resp) {
+        String origin = req.getHeader("Origin");
+        resp.setHeader("Access-Control-Allow-Origin", origin != null ? origin : "http://localhost:5173");
         resp.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
         resp.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+        resp.setHeader("Access-Control-Allow-Credentials", "true");
+        resp.setHeader("Vary", "Origin");
         resp.setContentType("application/json");
         resp.setCharacterEncoding("UTF-8");
     }
@@ -54,7 +58,7 @@ public class TransactionServlet extends HttpServlet {
      */
     @Override
     protected void doOptions(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        setAccessControlHeaders(resp);
+        setAccessControlHeaders(req, resp);
         resp.setStatus(HttpServletResponse.SC_OK);
     }
 
@@ -63,15 +67,19 @@ public class TransactionServlet extends HttpServlet {
      */
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        setAccessControlHeaders(resp);
+        setAccessControlHeaders(req, resp);
         PrintWriter out = resp.getWriter();
+        Integer userId = requireLoggedInUser(req, resp, out);
+        if (userId == null) {
+            return;
+        }
         
         try {
             String pathInfo = req.getPathInfo(); // E.g., "/12" or "/summary" or null
 
             // Scenario A: GET /api/transactions/summary -> Finance Dashboard Card statistics
             if (pathInfo != null && pathInfo.equals("/summary")) {
-                Map<String, Double> summary = transactionService.getFinanceSummary();
+                Map<String, Double> summary = transactionService.getFinanceSummary(userId);
                 resp.setStatus(HttpServletResponse.SC_OK);
                 out.print(toJson(summary));
                 return;
@@ -81,7 +89,7 @@ public class TransactionServlet extends HttpServlet {
             if (pathInfo != null && !pathInfo.equals("/")) {
                 // Parse ID from URL path (e.g., "/12" -> "12" -> 12)
                 int id = Integer.parseInt(pathInfo.substring(1));
-                Transaction transaction = transactionService.getTransactionById(id);
+                Transaction transaction = transactionService.getTransactionById(id, userId);
                 
                 resp.setStatus(HttpServletResponse.SC_OK);
                 out.print(toJson(transaction));
@@ -96,8 +104,8 @@ public class TransactionServlet extends HttpServlet {
             int page = getIntParam(req, "page", 1);
             int pageSize = getIntParam(req, "pageSize", 10);
 
-            List<Transaction> transactions = transactionService.getAllTransactions(type, category, date, sortBy, sortDir, page, pageSize);
-            int total = transactionService.countTransactions(type, category, date);
+            List<Transaction> transactions = transactionService.getAllTransactions(userId, type, category, date, sortBy, sortDir, page, pageSize);
+            int total = transactionService.countTransactions(userId, type, category, date);
             
             resp.setStatus(HttpServletResponse.SC_OK);
             out.print(paginatedTransactionsToJson(transactions, total, page, pageSize));
@@ -119,8 +127,12 @@ public class TransactionServlet extends HttpServlet {
      */
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        setAccessControlHeaders(resp);
+        setAccessControlHeaders(req, resp);
         PrintWriter out = resp.getWriter();
+        Integer userId = requireLoggedInUser(req, resp, out);
+        if (userId == null) {
+            return;
+        }
 
         try {
             // Read the JSON request body string from the input stream
@@ -128,7 +140,7 @@ public class TransactionServlet extends HttpServlet {
             Transaction newTransaction = parseJsonToTransaction(body);
 
             // Send to service layer for validation and persistence
-            Transaction saved = transactionService.addTransaction(newTransaction);
+            Transaction saved = transactionService.addTransaction(newTransaction, userId);
 
             // Return 201 Created status and the newly created object (including its DB generated ID)
             resp.setStatus(HttpServletResponse.SC_CREATED);
@@ -151,8 +163,12 @@ public class TransactionServlet extends HttpServlet {
      */
     @Override
     protected void doPut(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        setAccessControlHeaders(resp);
+        setAccessControlHeaders(req, resp);
         PrintWriter out = resp.getWriter();
+        Integer userId = requireLoggedInUser(req, resp, out);
+        if (userId == null) {
+            return;
+        }
 
         try {
             String pathInfo = req.getPathInfo();
@@ -169,7 +185,7 @@ public class TransactionServlet extends HttpServlet {
             Transaction updatedTransaction = parseJsonToTransaction(body);
             updatedTransaction.setId(id);
 
-            boolean success = transactionService.updateTransaction(updatedTransaction);
+            boolean success = transactionService.updateTransaction(updatedTransaction, userId);
             if (success) {
                 resp.setStatus(HttpServletResponse.SC_OK);
                 out.print(toJson(updatedTransaction));
@@ -203,8 +219,12 @@ public class TransactionServlet extends HttpServlet {
      * PARTIAL UPDATE - PATCH Requests
      */
     protected void doPatch(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        setAccessControlHeaders(resp);
+        setAccessControlHeaders(req, resp);
         PrintWriter out = resp.getWriter();
+        Integer userId = requireLoggedInUser(req, resp, out);
+        if (userId == null) {
+            return;
+        }
 
         try {
             String pathInfo = req.getPathInfo();
@@ -220,9 +240,9 @@ public class TransactionServlet extends HttpServlet {
             // Parse payload into a generic Key-Value map for partial updates
             Map<String, Object> fieldsToUpdate = parseJsonToMap(body);
 
-            boolean success = transactionService.patchTransaction(id, fieldsToUpdate);
+            boolean success = transactionService.patchTransaction(id, userId, fieldsToUpdate);
             if (success) {
-                Transaction updated = transactionService.getTransactionById(id);
+                Transaction updated = transactionService.getTransactionById(id, userId);
                 resp.setStatus(HttpServletResponse.SC_OK);
                 out.print(toJson(updated));
             } else {
@@ -244,8 +264,12 @@ public class TransactionServlet extends HttpServlet {
      */
     @Override
     protected void doDelete(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        setAccessControlHeaders(resp);
+        setAccessControlHeaders(req, resp);
         PrintWriter out = resp.getWriter();
+        Integer userId = requireLoggedInUser(req, resp, out);
+        if (userId == null) {
+            return;
+        }
 
         try {
             String pathInfo = req.getPathInfo();
@@ -256,7 +280,7 @@ public class TransactionServlet extends HttpServlet {
             }
 
             int id = Integer.parseInt(pathInfo.substring(1));
-            boolean success = transactionService.deleteTransaction(id);
+            boolean success = transactionService.deleteTransaction(id, userId);
             
             if (success) {
                 resp.setStatus(HttpServletResponse.SC_OK);
@@ -290,6 +314,16 @@ public class TransactionServlet extends HttpServlet {
             }
         }
         return sb.toString();
+    }
+
+    private Integer requireLoggedInUser(HttpServletRequest req, HttpServletResponse resp, PrintWriter out) {
+        HttpSession session = req.getSession(false);
+        if (session == null || session.getAttribute("userId") == null) {
+            resp.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            out.print("{\"error\":\"Please log in first.\"}");
+            return null;
+        }
+        return (Integer) session.getAttribute("userId");
     }
 
     private int getIntParam(HttpServletRequest req, String name, int defaultValue) {
